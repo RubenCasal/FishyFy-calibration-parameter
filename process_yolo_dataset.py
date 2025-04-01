@@ -9,6 +9,60 @@ from generate_new_bboxes import (
     find_fisheye_yolo_bbox,
     load_yolo_bboxes,
 )
+def crop_black_borders(image, bboxes):
+    # Convertir la imagen a escala de grises y binarizar
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
+
+    # Encontrar el contorno más externo que contiene la información relevante
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Validar si hay contornos detectados
+    if not contours:
+        print("⚠ No se encontraron contornos significativos. Devolviendo imagen original.")
+        return image, bboxes
+
+    # Ordenar los contornos por área descendente y seleccionar el más grande
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    x, y, w, h = cv2.boundingRect(contours[0])
+
+    # Verificar si el área detectada es significativa (evitar imágenes completamente negras)
+    if cv2.contourArea(contours[0]) < 0.01 * image.shape[0] * image.shape[1]:
+        print("⚠ Área del contorno insignificante. Devolviendo imagen original.")
+        return image, bboxes
+
+    # Recortar la imagen para eliminar las áreas negras
+    cropped_image = image[y:y+h, x:x+w]
+
+    # Ajustar las bounding boxes
+    new_bboxes = []
+    for bbox in bboxes:
+        cls_id, cx, cy, bw, bh = bbox
+
+        # Convertir coordenadas YOLO a absolutas
+        abs_cx = cx * image.shape[1]
+        abs_cy = cy * image.shape[0]
+        abs_bw = bw * image.shape[1]
+        abs_bh = bh * image.shape[0]
+
+        # Ajustar coordenadas absolutas tras el recorte
+        new_cx = (abs_cx - x) / w
+        new_cy = (abs_cy - y) / h
+        new_bw = abs_bw / w
+        new_bh = abs_bh / h
+
+        # Verificar si la bounding box está dentro del área recortada
+        if 0 <= new_cx <= 1 and 0 <= new_cy <= 1:
+            new_bboxes.append([cls_id, new_cx, new_cy, new_bw, new_bh])
+
+    # Verificar si el recorte resultó en una imagen completamente negra o sin cajas válidas
+    if cropped_image.size == 0 or not new_bboxes:
+        print("⚠ Imagen completamente negra o sin cajas válidas tras el recorte. Devolviendo imagen original.")
+        return image, bboxes
+
+    return cropped_image, new_bboxes
+
+
 
 def process_single_image(image_file, images_dir, labels_dir, output_images_dir, output_labels_dir, map_x, map_y):
     image_path = os.path.join(images_dir, image_file)
@@ -50,12 +104,13 @@ def process_single_image(image_file, images_dir, labels_dir, output_images_dir, 
         else:
             print(f"⚠ BBox {i} descartada tras la transformación.")
 
+    cropped_image, cropped_bboxes = crop_black_borders(fisheye_image, new_bboxes)
     output_image_path = os.path.join(output_images_dir, image_file)
-    cv2.imwrite(output_image_path, fisheye_image)
+    cv2.imwrite(output_image_path, cropped_image)
 
     output_label_path = os.path.join(output_labels_dir, label_file)
     with open(output_label_path, "w") as f:
-        for bbox in new_bboxes:
+        for bbox in cropped_bboxes:
             f.write(" ".join(f"{val:.6f}" for val in bbox) + "\n")
 
     print(f"✅ Procesado {image_file}: imagen y etiquetas guardadas.")
