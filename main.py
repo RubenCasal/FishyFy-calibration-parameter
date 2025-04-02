@@ -2,15 +2,22 @@
 from process_yolo_dataset import process_yolo_subset, update_yaml, get_LUT
 import os
 import time
+import numpy as np
+
 if __name__ == "__main__":
     DATASET_DIR = "./person_dataset"
     OUTPUT_DIR = "./fisheye2_person_dataset"
     SUBSETS = ['train',  'test', 'valid']
-    FISHEYE_STRENGTH = 0.7
+   
+    K = np.array([[284.509100, 0, 2.0],
+              [0, 282.941856, 2.0],
+              [0, 0, 1.000000]], dtype=np.float32)
+    
 
+    D = np.array([-0.614216, 0.060412,-0.054711, 0.011151], dtype=np.float32)
 
     start_time = time.perf_counter()
-    map_x, map_y = get_LUT(DATASET_DIR, FISHEYE_STRENGTH)
+    map_x, map_y = get_LUT(DATASET_DIR, K, D)
     for subset in SUBSETS:
         images_dir = os.path.join(DATASET_DIR, subset, 'images')
         labels_dir = os.path.join(DATASET_DIR, subset, 'labels')

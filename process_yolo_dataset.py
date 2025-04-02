@@ -10,54 +10,46 @@ from generate_new_bboxes import (
     load_yolo_bboxes,
 )
 def crop_black_borders(image, bboxes):
-    # Convertir la imagen a escala de grises y binarizar
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
 
-    # Encontrar el contorno más externo que contiene la información relevante
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Validar si hay contornos detectados
     if not contours:
-        print("⚠ No se encontraron contornos significativos. Devolviendo imagen original.")
+        print("⚠ No meaningful contours found. Returning original image.")
         return image, bboxes
 
-    # Ordenar los contornos por área descendente y seleccionar el más grande
     contours = sorted(contours, key=cv2.contourArea, reverse=True)
     x, y, w, h = cv2.boundingRect(contours[0])
 
-    # Verificar si el área detectada es significativa (evitar imágenes completamente negras)
     if cv2.contourArea(contours[0]) < 0.01 * image.shape[0] * image.shape[1]:
-        print("⚠ Área del contorno insignificante. Devolviendo imagen original.")
+        print("⚠ Bounding box so small to consider. Returning original image.")
         return image, bboxes
 
-    # Recortar la imagen para eliminar las áreas negras
     cropped_image = image[y:y+h, x:x+w]
 
-    # Ajustar las bounding boxes
     new_bboxes = []
     for bbox in bboxes:
         cls_id, cx, cy, bw, bh = bbox
 
-        # Convertir coordenadas YOLO a absolutas
         abs_cx = cx * image.shape[1]
         abs_cy = cy * image.shape[0]
         abs_bw = bw * image.shape[1]
         abs_bh = bh * image.shape[0]
 
-        # Ajustar coordenadas absolutas tras el recorte
+
         new_cx = (abs_cx - x) / w
         new_cy = (abs_cy - y) / h
         new_bw = abs_bw / w
         new_bh = abs_bh / h
 
-        # Verificar si la bounding box está dentro del área recortada
+
         if 0 <= new_cx <= 1 and 0 <= new_cy <= 1:
             new_bboxes.append([cls_id, new_cx, new_cy, new_bw, new_bh])
 
-    # Verificar si el recorte resultó en una imagen completamente negra o sin cajas válidas
+
     if cropped_image.size == 0 or not new_bboxes:
-        print("⚠ Imagen completamente negra o sin cajas válidas tras el recorte. Devolviendo imagen original.")
+        print("⚠ Image is completely black or without valid bounding boxes.")
         return image, bboxes
 
     return cropped_image, new_bboxes
@@ -115,7 +107,7 @@ def process_single_image(image_file, images_dir, labels_dir, output_images_dir, 
 
     print(f"✅ Procesado {image_file}: imagen y etiquetas guardadas.")
 
-def get_LUT(dataset_dir,distortion_strength):
+def get_LUT(dataset_dir,K, D):
     images_dir = os.path.join(dataset_dir, 'train', 'images')
     first_image_file = next(
     (entry.name for entry in os.scandir(images_dir) if entry.is_file() and entry.name.endswith(('.jpg', '.png'))),
@@ -127,7 +119,7 @@ def get_LUT(dataset_dir,distortion_strength):
         return
 
     first_image_square = resize_to_square(first_image)
-    map_x, map_y = create_LUT_table(first_image_square, distortion_strength=distortion_strength)
+    map_x, map_y = create_LUT_table(first_image_square, K, D)
     return map_x, map_y
     
 
@@ -142,8 +134,6 @@ def process_yolo_subset(images_dir, labels_dir, output_images_dir, output_labels
         print(f"❌ No se encontraron imágenes en {images_dir}.")
         return
 
-   
-    # Procesar imágenes en paralelo usando todos los cores disponibles
     num_cores = os.cpu_count()
     with ProcessPoolExecutor(max_workers=num_cores) as executor:
         futures = [

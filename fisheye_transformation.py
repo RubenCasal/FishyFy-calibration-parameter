@@ -6,19 +6,16 @@ def resize_to_square(img: np.ndarray) -> np.ndarray:
     size = max(img.shape[:2])
     return cv2.resize(img, (size, size), interpolation=cv2.INTER_CUBIC)
 
-def create_fisheye_mapping(h, w, strength=0.6):
-    
-    K = np.array([[284.509100, 0, w/2.0],
-              [0, 282.941856, h/2.0],
-              [0, 0, 1.000000]], dtype=np.float32)
-    
+def create_fisheye_mapping(h, w, K, D):
+    K[0,2] = w/2.0
+    K[1,2] = h /2.0
 
-    D = np.array([-0.614216, 0.060412,-0.054711, 0.011151], dtype=np.float32)
+    print(K)
     R = np.eye(3, dtype=np.float32)
-    # Scale focal lengths to reduce black borders
-    scale = 2  # Reduced scale factor to minimize black areas
-    K[0, 0] *= scale  # fx
-    K[1, 1] *= scale  # fy
+   
+    scale = 2 
+    K[0, 0] *= scale  
+    K[1, 1] *= scale  
 
     # Generate grid for the distorted image
     xv, yv = np.meshgrid(np.arange(w), np.arange(h))
@@ -40,8 +37,8 @@ def apply_fisheye(image, map_x, map_y, interpolation=cv2.INTER_LINEAR):
    
     return cv2.remap(image, map_x, map_y, interpolation=cv2.INTER_LINEAR, borderValue=(0, 0, 0))
 
-def create_LUT_table(image, distortion_strength=0.6):
+def create_LUT_table(image, K ,D):
 
     h, w = image.shape[:2]
-    map_x, map_y = create_fisheye_mapping(h, w,distortion_strength)
+    map_x, map_y = create_fisheye_mapping(h, w, K, D)
     return map_x, map_y
