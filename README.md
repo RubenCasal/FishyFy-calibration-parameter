@@ -36,17 +36,20 @@ Dataset/
 1. **Square Resize**: The image is resized to a square to maintain isotropic distortion using the `resize_to_square()` function.
 
 2. **LUT (Lookup Table) Computation**:
-   - Uses camera parameters to compute a distortion map via the `create_LUT_table()` function.
-   - The LUT is calculated once using a sample image and reused for all images.
+   - The LUT (Lookup Table) is a precomputed map that translates each pixel's coordinates from the original image to their new positions after applying the fisheye distortion.
+   - The fisheye distortion effect is modeled by projecting the image through a non-linear transformation based on the camera's intrinsic matrix `K` and distortion coefficients `D`.
+   - The `create_LUT_table()` function calculates two transformation maps, `map_x` and `map_y`, which contain the horizontal and vertical coordinates for each pixel after distortion.
+   - These maps allow the fisheye transformation to be efficiently applied to the entire image in a single remapping step, significantly reducing computational cost when processing large datasets.
 
-3. **Fisheye Transformation**:
-   - Applies the distortion map to each image using the `apply_fisheye()` function.
-   - Crops black borders if necessary to maintain relevant content using `crop_black_borders()`.
+3. **Applying Fisheye Transformation**:
+   - The `apply_fisheye()` function uses the LUT to remap image pixels, creating the fisheye effect.
+   - The `crop_black_borders()` function removes any black areas resulting from the transformation.
 
-4. **Bounding Box Adjustment**:
-   - Converts bounding boxes from YOLO format to absolute coordinates using `yolo_to_absolute()`.
-   - Applies the same fisheye transformation to bounding box masks using `generate_bbox_mask()` and `apply_fisheye()`.
-   - Recalculates the bounding box position and size after transformation using `find_fisheye_yolo_bbox()`.
+4. **Bounding Box Transformation**:
+   - Bounding boxes in YOLO format (x_center, y_center, width, height) are converted to absolute coordinates using the `yolo_to_absolute()` function.
+   - Each bounding box is transformed through a mask-based fisheye effect using `generate_bbox_mask()`.
+   - The transformed bounding box is recalculated using `find_fisheye_yolo_bbox()`, which identifies the smallest enclosing rectangle after distortion.
+   - Bounding boxes that are too small or completely outside the visible area are discarded to maintain data accuracy.
 
 ### 🌀 Parallel Processing
 - Utilizes `ProcessPoolExecutor` for multi-core processing, where each image is processed in parallel to speed up the transformation.
@@ -57,23 +60,26 @@ Dataset/
 
 ## 🔧 How to Use
 
+To use this tool, configure the input dataset path, output path, and camera calibration parameters (`K` and `D`). Run the script to process the dataset, and the transformed images with updated bounding boxes will be saved in the output directory.
+
 ```python
 from process_yolo_dataset import process_yolo_subset, update_yaml, get_LUT
 import os
+import time
 import numpy as np
 
 DATASET_DIR = "./person_dataset"
 OUTPUT_DIR = "./fisheye2_person_dataset"
-SUBSETS = ['train', 'test', 'valid']
+SUBSETS = ['train']
 
-K = np.array([[284.509100, 0, 2.0],
-              [0, 282.941856, 2.0],
+K = np.array([[284.509100, 0, 421.896335],
+              [0, 282.941856, 398.100316],
               [0, 0, 1.000000]], dtype=np.float32)
 
-D = np.array([-0.614216, 0.060412, -0.054711, 0.011151], dtype=np.float32)
+D = np.array([-0.014216, 0.060412, -0.054711, 0.011151], dtype=np.float32)
 
+start_time = time.perf_counter()
 map_x, map_y = get_LUT(DATASET_DIR, K, D)
-
 for subset in SUBSETS:
     images_dir = os.path.join(DATASET_DIR, subset, 'images')
     labels_dir = os.path.join(DATASET_DIR, subset, 'labels')
@@ -84,9 +90,15 @@ for subset in SUBSETS:
 input_yaml = os.path.join(DATASET_DIR, 'data.yaml')
 output_yaml = os.path.join(OUTPUT_DIR, 'data.yaml')
 update_yaml(input_yaml, output_yaml, OUTPUT_DIR)
+
+end_time = time.perf_counter()
+elapsed_time = end_time - start_time
+print(f"Total processing time: {elapsed_time:.2f} seconds")
 ```
 
 ## 👀 Visualization Utility
+
+To visualize the transformed images and their bounding boxes, use the following script. It loads an image and its bounding boxes from the output directory, draws the bounding boxes on the image, and saves the result for quick inspection.
 ```python
 from generate_new_bboxes import draw_yolo_bboxes, load_yolo_bboxes
 import cv2
@@ -98,6 +110,7 @@ cv2.imwrite("output/image1_preview.jpg", image_with_boxes)
 ```
 
 ## ⚠️ Limitations
-- Bounding boxes remain rectangular.
+- Some information near the image edges may be lost after applying the fisheye transformation.
 - The transformation may discard bounding boxes that are too small or outside the fisheye field of view.
+- Due to the fisheye effect, some bounding boxes may slightly move out of the visible area.
 
