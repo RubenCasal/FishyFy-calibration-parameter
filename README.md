@@ -55,9 +55,6 @@ Dataset/
 - Utilizes `ProcessPoolExecutor` for multi-core processing, where each image is processed in parallel to speed up the transformation.
 - Computes the LUT once and shares it among worker processes.
 
-### 🗃️ Dataset Update
-- Updates the `data.yaml` file to reflect the new transformed dataset paths using `update_yaml()`.
-
 ## 🔧 How to Use
 
 To use this tool, configure the input dataset path, output path, and camera calibration parameters (`K` and `D`). Run the script to process the dataset, and the transformed images with updated bounding boxes will be saved in the output directory.
